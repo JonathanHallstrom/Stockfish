@@ -541,6 +541,8 @@ void Search::Worker::iterative_deepening() {
     if (!mainThread)
         return;
 
+    std::cout << qs_see_attempts[0] * 100.0 / std::max(qs_see_attempts[1].load(),1) << "% " << qs_see_attempts[2] * 100.0 / std::max(qs_see_attempts[3].load(),1)  << "%\n";
+
     mainThread->previousTimeReduction = timeReduction;
 
     // If the skill level is enabled, swap the best PV line with the sub-optimal one
@@ -1652,6 +1654,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         moveCount++;
 
+        bool wouldve_been_see_pruned = false;
         // Step 6. Pruning
         if (!is_loss(bestValue))
         {
@@ -1676,8 +1679,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 // we can prune this move.
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
-                    bestValue = std::min(alpha, futilityBase);
-                    continue;
+                    // bestValue = std::min(alpha, futilityBase);
+                    // continue;
+                    wouldve_been_see_pruned = true;
                 }
             }
 
@@ -1690,8 +1694,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 continue;
 
             // Do not search moves with bad enough SEE values
-            if (!pos.see_ge(move, -75))
-                continue;
+            if (!pos.see_ge(move, -75)) {
+                wouldve_been_see_pruned = true;
+                // continue;
+            }
         }
 
         // Step 7. Make and search the move
@@ -1711,7 +1717,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         undo_move(pos, move);
 
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
-
+        thisThread->qs_see_attempts[1] += wouldve_been_see_pruned; // increment how many nodes we wouldve pruned
+        if (value <= alpha) {
+            thisThread->qs_see_attempts[2] += !wouldve_been_see_pruned; // increment if wrongly didnt prune a node that failed low
+            thisThread->qs_see_attempts[3] += 1; // total faillows
+        }
         // Step 8. Check for a new best move
         if (value > bestValue)
         {
@@ -1719,6 +1729,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
             if (value > alpha)
             {
+                thisThread->qs_see_attempts[0] += wouldve_been_see_pruned; // increment if wrongly pruned a node that didnt fail low
+
                 bestMove = move;
 
                 if (PvNode)  // Update pv even in fail-high case

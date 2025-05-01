@@ -1069,6 +1069,20 @@ bool Position::see_ge(Move m, int threshold) const {
     assert(color_of(piece_on(from)) == sideToMove);
     Bitboard occupied  = pieces() ^ from ^ to;  // xoring to is important for pinned piece logic
     Color    stm       = sideToMove;
+
+    const Bitboard white_pinned = blockers_for_king(WHITE);
+    const Bitboard black_pinned = blockers_for_king(BLACK);
+
+    // if a piece is pinned along the line from its king to the target square for the move 
+    // currently being evaluated, it can still participate in SEE.
+    const Bitboard white_allowed = line_bb(lsb(pieces(WHITE, KING)), to) & white_pinned;
+    const Bitboard black_allowed = line_bb(lsb(pieces(BLACK, KING)), to) & black_pinned;
+
+    // a piece is always allowed if it's either not pinned or its one of the pieces that is pinned along the (to, king) line
+    const Bitboard allowed_pinned = white_allowed | black_allowed;
+
+    Bitboard allowed = ~(white_pinned | black_pinned) | allowed_pinned;
+
     Bitboard attackers = attackers_to(to, occupied);
     Bitboard stmAttackers, bb;
     int      res = 1;
@@ -1086,7 +1100,7 @@ bool Position::see_ge(Move m, int threshold) const {
         // pinners on their original square.
         if (pinners(~stm) & occupied)
         {
-            stmAttackers &= ~blockers_for_king(stm);
+            stmAttackers &= ~blockers_for_king(stm) | allowed;
 
             if (!stmAttackers)
                 break;
@@ -1117,7 +1131,10 @@ bool Position::see_ge(Move m, int threshold) const {
             if ((swap = BishopValue - swap) < res)
                 break;
             occupied ^= least_significant_square_bb(bb);
-
+            
+            // allow pieces that were previously pinned by the bishop that just moved to take part
+            allowed |= between_bb(lsb(bb), lsb(pieces(~stm, KING))) & pieces(~stm); 
+            
             attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
         }
 
@@ -1126,7 +1143,10 @@ bool Position::see_ge(Move m, int threshold) const {
             if ((swap = RookValue - swap) < res)
                 break;
             occupied ^= least_significant_square_bb(bb);
-
+            
+            // allow pieces that were previously pinned by the rook that just moved to take part
+            allowed |= between_bb(lsb(bb), lsb(pieces(~stm, KING))) & pieces(~stm);
+            
             attackers |= attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN);
         }
 
@@ -1136,6 +1156,9 @@ bool Position::see_ge(Move m, int threshold) const {
             //  implies that the previous recapture was done by a higher rated piece than a Queen (King is excluded)
             assert(swap >= res);
             occupied ^= least_significant_square_bb(bb);
+
+            // allow pieces that were previously pinned by the queen that just moved to take part
+            allowed |= between_bb(lsb(bb), lsb(pieces(~stm, KING))) & pieces(~stm);
 
             attackers |= (attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN))
                        | (attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN));

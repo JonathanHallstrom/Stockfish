@@ -360,6 +360,8 @@ class Worker {
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;
+    public:
+    std::array<std::atomic<int>, 4> qs_see_attempts;
 };
 
 struct ConthistBonus {
